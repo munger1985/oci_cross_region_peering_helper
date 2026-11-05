@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OCI Cross-Region DRG Peering Helper</title>
+<link rel="stylesheet" href="/static/app.css?v=8" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">DRG</span>
+    <div>
+      <strong>Cross-Region Peering Helper</strong>
+      <small>Drag a CIDR block onto a CIDR block in another region. A subnet with one CIDR is still one block.</small>
+    </div>
+  </div>
+  <div class="session">
+    <label>Profile
+      <select id="profile"></select>
+    </label>
+    <button id="reload" class="ghost">Reload</button>
+    <label class="check live-toggle"><input id="live" type="checkbox" checked /> Live 5s</label>
+    <span id="live-clock" class="muted">waiting</span>
+    <span id="tenancy" class="muted"></span>
+  </div>
+</header>
+
+<div id="banner" class="banner hidden"></div>
+
+<main class="layout">
+  <section class="side" data-side="left">
+    <header>
+      <span class="dot left"></span>
+      <h2>Region A</h2>
+    </header>
+    <label>Region
+      <div class="combo region" data-key="region"></div>
+    </label>
+    <label>DRG compartment
+      <div class="combo drg-compartment" data-key="drg-compartment"></div>
+    </label>
+    <label>DRG
+      <div class="combo drg" data-key="drg"></div>
+    </label>
+    <div class="row drg-create">
+      <input class="drg-name" placeholder="New DRG name" />
+      <button class="tiny create-drg">Create DRG</button>
+    </div>
+    <p class="drg-empty muted hidden">No DRG in this compartment. Create one above.</p>
+    <div class="rpc-box hidden">
+      <div class="row rpc-head">
+        <strong>RPC</strong>
+        <span class="badge rpc-badge">NONE</span>
+        <button class="tiny refresh-side">Refresh</button>
+      </div>
+      <div class="combo rpc" data-key="rpc"></div>
+      <div class="row">
+        <input class="rpc-name" placeholder="New RPC name" />
+        <button class="tiny create-rpc">Create</button>
+        <button class="tiny danger delete-rpc">Delete</button>
+      </div>
+      <p class="rpc-status muted">No RPC selected</p>
+    </div>
+    <label>VCN compartment
+      <div class="combo vcn-compartment" data-key="vcn-compartment"></div>
+    </label>
+    <label>VCN
+      <div class="combo vcn" data-key="vcn"></div>
+    </label>
+    <label>Attachment route type
+      <select class="route-type">
+        <option value="SUBNET_CIDRS">SUBNET_CIDRS — only the selected subnets</option>
+        <option value="VCN_CIDRS">VCN_CIDRS — whole VCN CIDR, via a VCN route table</option>
+      </select>
+    </label>
+    <label class="vcn-rt-wrap hidden">VCN route table
+      <div class="combo vcn-route-table" data-key="vcn-route-table"></div>
+    </label>
+    <p class="route-type-note muted">SUBNET_CIDRS advertises only subnet CIDRs into the DRG. VCN_CIDRS advertises the whole VCN CIDR into the VCN route table selected below.</p>
+    <div class="row">
+      <button class="attach">Attach VCN</button>
+      <button class="ghost detach">Detach</button>
+    </div>
+    <p class="attach-status muted">Not attached</p>
+    <div class="subnet-head">
+      <strong>Subnets</strong>
+      <span class="muted">One card per CIDR</span>
+    </div>
+    <div class="subnet-list"></div>
+  </section>
+
+  <section class="canvas-wrap">
+    <div class="canvas-bar">
+      <div>
+        <strong>Peering canvas</strong>
+        <span class="muted">Drag one CIDR onto a CIDR on the other side</span>
+      </div>
+      <div class="row">
+        <button id="connect" class="primary">Connect RPC</button>
+        <button id="reestablish" class="ghost">Re-establish</button>
+        <button id="disconnect" class="danger">Delete both RPCs</button>
+        <button id="clear-link" class="ghost">Clear CIDR links</button>
+      </div>
+    </div>
+    <div id="canvas">
+      <svg id="wires"></svg>
+      <div class="lane" id="lane-left"></div>
+      <div class="lane center" id="lane-center">
+        <div class="hub" id="hub">
+          <span>RPC</span>
+          <em id="hub-state">Not connected</em>
+        </div>
+      </div>
+      <div class="lane" id="lane-right"></div>
+    </div>
+    <div id="link-summary" class="link-summary">No CIDR pair yet. Drag one CIDR block onto a CIDR block in the other region.</div>
+  </section>
+
+  <section class="side" data-side="right">
+    <header>
+      <span class="dot right"></span>
+      <h2>Region B</h2>
+    </header>
+    <label>Region
+      <div class="combo region" data-key="region"></div>
+    </label>
+    <label>DRG compartment
+      <div class="combo drg-compartment" data-key="drg-compartment"></div>
+    </label>
+    <label>DRG
+      <div class="combo drg" data-key="drg"></div>
+    </label>
+    <div class="row drg-create">
+      <input class="drg-name" placeholder="New DRG name" />
+      <button class="tiny create-drg">Create DRG</button>
+    </div>
+    <p class="drg-empty muted hidden">No DRG in this compartment. Create one above.</p>
+    <div class="rpc-box hidden">
+      <div class="row rpc-head">
+        <strong>RPC</strong>
+        <span class="badge rpc-badge">NONE</span>
+        <button class="tiny refresh-side">Refresh</button>
+      </div>
+      <div class="combo rpc" data-key="rpc"></div>
+      <div class="row">
+        <input class="rpc-name" placeholder="New RPC name" />
+        <button class="tiny create-rpc">Create</button>
+        <button class="tiny danger delete-rpc">Delete</button>
+      </div>
+      <p class="rpc-status muted">No RPC selected</p>
+    </div>
+    <label>VCN compartment
+      <div class="combo vcn-compartment" data-key="vcn-compartment"></div>
+    </label>
+    <label>VCN
+      <div class="combo vcn" data-key="vcn"></div>
+    </label>
+    <label>Attachment route type
+      <select class="route-type">
+        <option value="SUBNET_CIDRS">SUBNET_CIDRS — only the selected subnets</option>
+        <option value="VCN_CIDRS">VCN_CIDRS — whole VCN CIDR, via a VCN route table</option>
+      </select>
+    </label>
+    <label class="vcn-rt-wrap hidden">VCN route table
+      <div class="combo vcn-route-table" data-key="vcn-route-table"></div>
+    </label>
+    <p class="route-type-note muted">SUBNET_CIDRS advertises only subnet CIDRs into the DRG. VCN_CIDRS advertises the whole VCN CIDR into the VCN route table selected below.</p>
+    <div class="row">
+      <button class="attach">Attach VCN</button>
+      <button class="ghost detach">Detach</button>
+    </div>
+    <p class="attach-status muted">Not attached</p>
+    <div class="subnet-head">
+      <strong>Subnets</strong>
+      <span class="muted">One card per CIDR</span>
+    </div>
+    <div class="subnet-list"></div>
+  </section>
+</main>
+
+<section class="workbench hidden" id="workbench">
+  <header>
+    <div>
+      <h2>Open these CIDR pairs</h2>
+      <p id="pair-title" class="muted"></p>
+    </div>
+    <div class="cidr-pair" id="cidr-pair"></div>
+  </header>
+  <div class="steps">
+    <article>
+      <h3>1. DRG attachment route tables</h3>
+      <p class="hint">After two CIDRs are linked, each DRG shows every dynamic and static route in the VCN attachment and RPC attachment route tables. The VCN table should learn peer CIDRs from the RPC attachment; the RPC table should learn local CIDRs from the VCN attachment. MATCH_ALL is checked on both import distributions using OCI's empty matchCriteria representation.</p>
+      <div class="grid-2">
+        <div>
+          <h4>Region A</h4>
+          <pre id="rt-left" class="mini">Waiting for a CIDR link.</pre>
+        </div>
+        <div>
+          <h4>Region B</h4>
+          <pre id="rt-right" class="mini">Waiting for a CIDR link.</pre>
+        </div>
+      </div>
+    </article>
+    <article>
+      <h3>2. Subnet route table</h3>
+      <p class="hint">Only the CIDR you dragged is added. The next hop is this region's DRG. Other CIDRs on the same subnet are left alone.</p>
+      <div class="grid-2" id="route-editors"></div>
+    </article>
+    <article>
+      <h3>3. Security list</h3>
+      <p class="hint">Only the dragged peer CIDR is offered below. Write it as ingress and egress. Existing matching rules are not duplicated.</p>
+      <div class="sl-controls">
+        <label>Protocol
+          <select id="sl-protocol">
+            <option value="all">all</option>
+            <option value="6">TCP</option>
+            <option value="17">UDP</option>
+            <option value="1">ICMP</option>
+          </select>
+        </label>
+        <label>Destination port
+          <input id="sl-port" placeholder="empty = all, or 443 / 80-90" />
+        </label>
+        <label class="check"><input id="sl-ingress" type="checkbox" checked /> ingress</label>
+        <label class="check"><input id="sl-egress" type="checkbox" checked /> egress</label>
+      </div>
+      <div class="grid-2" id="sl-editors"></div>
+    </article>
+  </div>
+</section>
+
+<div id="toast" class="toast hidden"></div>
+<div id="working" class="working hidden"><span class="spinner"></span><span id="working-text">Working…</span></div>
+<script src="/static/app.js?v=16"></script>
+</body>
+</html>
